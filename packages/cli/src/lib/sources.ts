@@ -3,6 +3,7 @@ import path from "node:path";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
 import { homeDir, resolveSourcePath, toSourcePath } from "./paths.js";
 import { readRegularFile } from "./regularFile.js";
+import { followLinks } from "./links.js";
 
 export type SourceCandidate = {
   /** Rubric spelling: repo-relative or "~/...". */
@@ -12,7 +13,7 @@ export type SourceCandidate = {
   scope: string;
   /** Required candidates must appear in the rubric for it to be fresh. */
   required: boolean;
-  origin: "root" | "nested" | "global" | "contributing";
+  origin: "root" | "nested" | "global" | "contributing" | "linked";
 };
 
 const ROOT_NAMES = ["AGENTS.md", "CLAUDE.md", ".cursorrules"];
@@ -84,7 +85,63 @@ export const discoverProjectSources = (root: string): SourceCandidate[] => {
       origin: "contributing",
     });
   }
+  found.push(...discoverLinkedSources(root, found));
   return found;
+};
+
+/**
+ * The documents the files above link to.
+ *
+ * A linked document is not a child of the file that linked it, so it does not
+ * inherit that file's scope. docs/AGENTS.md governs docs/ and links out to the
+ * Agent Notes to say they are out of its range; inheriting its scope would put
+ * the notes under the documentation standard, which is the opposite of what the
+ * link says. A linked file's scope comes from where it sits instead: a nested
+ * AGENTS.md of its own wins, otherwise the nearest such file above it, otherwise
+ * everywhere.
+ *
+ * Required, because a hub pointing at a document is the workspace saying the
+ * document holds rules; losing it from the rubric is worth recompiling for.
+ */
+const discoverLinkedSources = (
+  root: string,
+  seeds: readonly SourceCandidate[],
+): SourceCandidate[] => {
+  const known = new Set(seeds.map((s) => path.resolve(s.absolute)));
+  const nestedScopes = seeds
+    .filter((s) => s.origin === "nested")
+    .map((s) => ({ dir: path.dirname(path.resolve(s.absolute)), scope: s.scope }));
+  const out: SourceCandidate[] = [];
+  for (const linked of followLinks(root, seeds.map((s) => s.absolute))) {
+    const resolved = path.resolve(linked.absolute);
+    if (known.has(resolved)) continue;
+    known.add(resolved);
+    out.push({
+      path: toSourcePath(root, linked.absolute),
+      absolute: linked.absolute,
+      scope: scopeForPath(root, resolved, nestedScopes),
+      required: true,
+      origin: "linked",
+    });
+  }
+  return out;
+};
+
+/** The scope a file is governed by: its own subtree AGENTS.md, else the nearest one above, else everywhere. */
+const scopeForPath = (
+  root: string,
+  absolute: string,
+  nested: readonly { dir: string; scope: string }[],
+): string => {
+  const dir = path.dirname(absolute);
+  // The deepest directory whose subtree contains this file owns it.
+  const owners = nested
+    .filter((n) => dir === n.dir || dir.startsWith(`${n.dir}${path.sep}`))
+    .sort((a, b) => b.dir.length - a.dir.length);
+  const owner = owners[0];
+  if (owner !== undefined) return owner.scope;
+  // No subtree owns it: it applies to the file itself, not the whole repo.
+  return toSourcePath(root, absolute);
 };
 
 export const discoverGlobalSources = (): SourceCandidate[] =>
