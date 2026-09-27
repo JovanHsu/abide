@@ -8,7 +8,7 @@ import { findRepoRoot } from "../lib/paths.js";
 import { Callout } from "../ui/components/Callout.js";
 import { showPicker, showStatic } from "../ui/render.js";
 import type { PickerItem } from "../ui/components/Picker.js";
-import { GATEWAY_KEY_ENV, TYPESAFE_KEY_ENV } from "../lib/constants.js";
+import { GATEWAY_KEY_ENV, OPENROUTER_KEY_ENV, TYPESAFE_KEY_ENV } from "../lib/constants.js";
 import { projectEnvPath, saveKey, userEnvPath } from "../lib/credentials.js";
 
 type Provider = { name: string; prompt: string };
@@ -25,6 +25,12 @@ const GATEWAY: PickerItem<Provider> = {
   value: { name: GATEWAY_KEY_ENV, prompt: "Vercel AI Gateway key: " },
   label: "Vercel AI Gateway key",
   hint: "a key you already have",
+};
+
+const OPENROUTER: PickerItem<Provider> = {
+  value: { name: OPENROUTER_KEY_ENV, prompt: "OpenRouter API key: " },
+  label: "OpenRouter API key",
+  hint: "a general model answers instead of Jev; bands mean what that model means",
 };
 
 /** On a pipe there is no menu, so the first item wins. */
@@ -63,7 +69,7 @@ export const leakWarning = (place: Place): ReactElement | null => {
 
 /** Never a flag: a flag lands in shell history and CI logs. */
 export const runLogin = async (): Promise<number> => {
-  const provider = await ask("Which key do you have?", [TYPESAFE, GATEWAY]);
+  const provider = await ask("Which key do you have?", [TYPESAFE, GATEWAY, OPENROUTER]);
   const place = await choosePlace(findRepoRoot(process.cwd()));
   const key = await readSecret(provider.prompt);
   if (key === "") throw new AbideError("NO_API_KEY", "nothing was entered");

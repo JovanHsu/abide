@@ -2,7 +2,14 @@ import { chmodSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AbideError } from "@coldtea/abide-schema";
 import { globalAbideDir } from "./paths.js";
-import { GATEWAY_KEY_ENV, TYPESAFE_BASE_URL_ENV, TYPESAFE_KEY_ENV } from "./constants.js";
+import {
+  GATEWAY_KEY_ENV,
+  OPENROUTER_DEFAULT_MODEL_ID,
+  OPENROUTER_KEY_ENV,
+  OPENROUTER_MODEL_ENV,
+  TYPESAFE_BASE_URL_ENV,
+  TYPESAFE_KEY_ENV,
+} from "./constants.js";
 import { readRegularText, writeRegularFile } from "./regularFile.js";
 
 /**
@@ -14,12 +21,21 @@ import { readRegularText, writeRegularFile } from "./regularFile.js";
 export type Credentials =
   | { kind: "typesafe"; key: string; baseURL?: string; from: string }
   | { kind: "gateway"; key: string; from: string }
+  | { kind: "openrouter"; key: string; model: string; from: string }
   | { kind: "none" };
 
-export const KEY_NAMES: readonly string[] = [TYPESAFE_KEY_ENV, GATEWAY_KEY_ENV];
+export const KEY_NAMES: readonly string[] = [
+  TYPESAFE_KEY_ENV,
+  GATEWAY_KEY_ENV,
+  OPENROUTER_KEY_ENV,
+];
 
 /** The base URL is not a secret and is never written by abide, only read alongside the key. */
-const READ_NAMES: readonly string[] = [...KEY_NAMES, TYPESAFE_BASE_URL_ENV];
+const READ_NAMES: readonly string[] = [
+  ...KEY_NAMES,
+  TYPESAFE_BASE_URL_ENV,
+  OPENROUTER_MODEL_ENV,
+];
 
 export const userEnvPath = (): string => path.join(globalAbideDir(), ".env");
 
@@ -57,6 +73,15 @@ const pick = (vars: Map<string, string>, from: string): Credentials => {
   if (typesafe !== undefined) return { kind: "typesafe", key: typesafe, from };
   const gateway = vars.get(GATEWAY_KEY_ENV);
   if (gateway !== undefined) return { kind: "gateway", key: gateway, from };
+  const openrouter = vars.get(OPENROUTER_KEY_ENV);
+  if (openrouter !== undefined) {
+    return {
+      kind: "openrouter",
+      key: openrouter,
+      model: vars.get(OPENROUTER_MODEL_ENV) ?? OPENROUTER_DEFAULT_MODEL_ID,
+      from,
+    };
+  }
   return { kind: "none" };
 };
 

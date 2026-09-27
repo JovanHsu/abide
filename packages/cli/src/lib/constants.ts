@@ -7,6 +7,22 @@ export const GATEWAY_KEY_ENV = "AI_GATEWAY_API_KEY";
 /** Point the direct TypeSafe call at a self-hosted, API-compatible endpoint instead of typesafe.ai. */
 export const TYPESAFE_BASE_URL_ENV = "TYPESAFE_AI_BASE_URL";
 
+/**
+ * OpenRouter is not a TypeSafe endpoint. It has no /systemone and no calibrated
+ * probabilities, so a reply is prose coerced back into the answer shape. The
+ * model is a general one, which means the band thresholds mean what that model
+ * means by a number, not what Jev would have meant.
+ */
+export const OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY";
+export const OPENROUTER_MODEL_ENV = "OPENROUTER_MODEL";
+export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
+export const OPENROUTER_CHAT_PATH = "/chat/completions";
+export const OPENROUTER_DEFAULT_MODEL_ID = "deepseek/deepseek-v4.1-flash";
+/** A reply that will not parse is a wrong answer; the next sample is cheaper than a miss. */
+export const OPENROUTER_REPLY_ATTEMPTS = 3;
+/** OpenRouter bills input and output; list price is per model, so cost is left to the service. */
+export const OPENROUTER_USD_PER_INPUT_TOKEN = 0;
+
 /** List price observed 2026-09-17: $0.042 per million input tokens, output free. */
 export const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 
