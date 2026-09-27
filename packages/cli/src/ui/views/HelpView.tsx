@@ -3,7 +3,10 @@ import { Header } from "../components/Header.js";
 import { palette } from "../theme.js";
 
 const COMMANDS: [string, string][] = [
-  ["login", "store your TypeSafe or Vercel AI Gateway key, for you or for this repo, owner-only"],
+  [
+    "login [typesafe|gateway|openrouter] [user|project]",
+    "store a key owner-only, for you or for this repo",
+  ],
   ["init [agent] [--project]", "hook into claude, codex, opencode, or every one found here"],
   ["compile", "compile the rubric now, in a headless Claude Code turn"],
   ["tune [--global]", "rewrite rules that never fire, with their statistics attached"],
@@ -42,7 +45,7 @@ export function HelpView() {
           --json prints machine-readable output on report, check, audit, bench and calibrate.
         </Text>
         <Text color={palette.ash}>
-          Key: abide login, or TYPESAFE_AI_API_KEY (or AI_GATEWAY_API_KEY) in the environment or a
+          Key: abide login, or TYPESAFE_AI_API_KEY, AI_GATEWAY_API_KEY or OPENROUTER_API_KEY in the environment or a
           .env.local or .env at the repo root.
         </Text>
       </Box>

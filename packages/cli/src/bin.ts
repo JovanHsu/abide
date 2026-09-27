@@ -21,7 +21,7 @@ const main = async (): Promise<number> => {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {
     case "login":
-      return runLogin();
+      return runLogin(rest);
     case "init":
       return runInit(rest);
     case "compile":
