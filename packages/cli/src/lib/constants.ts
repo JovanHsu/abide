@@ -26,8 +26,28 @@ export const OPENROUTER_USD_PER_INPUT_TOKEN = 0;
 /** List price observed 2026-09-17: $0.042 per million input tokens, output free. */
 export const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 
-export const EDIT_CHECK_TIMEOUT_MS = 8_000;
-export const TURN_CHECK_TIMEOUT_MS = 15_000;
+/**
+ * How long one group of rules may spend at the model before the edit is left
+ * unjudged.
+ *
+ * Sized against the whole call, because latency scales with how many rules ride
+ * in it: three rules answered in 2.7s, the twenty-six this repository's edit
+ * phase actually sends ranged from 4.6s to 19.9s across identical prompts. The
+ * spread is the provider's, not the prompt's, so the budget has to clear the
+ * tail rather than the median.
+ *
+ * It stays under the 18s the hook allows itself, because that budget exits
+ * silently: a check that runs past it produces no verdict at all, where one
+ * that stops here at least reports that the change went unjudged.
+ */
+export const EDIT_CHECK_TIMEOUT_MS = 16_000;
+/**
+ * A turn carries every file the agent touched, so it gets the longer budget —
+ * but Stop spends up to STOP_GIT_TIMEOUT_MS and STOP_FALLBACK_DIFF_TIMEOUT_MS
+ * before the check runs, and the hook gives itself 28s. What is left over is
+ * 14s, and this must fit inside that or the hook exits with no verdict.
+ */
+export const TURN_CHECK_TIMEOUT_MS = 13_000;
 export const STDIN_TIMEOUT_MS = 2_000;
 
 /** Largest diff sent as state. Beyond this the diff is cut and marked. */
