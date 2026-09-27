@@ -209,10 +209,18 @@ const normalizeAll = (
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A reasoning model spends output tokens thinking before it writes. The JSON needs room on top of that. */
+const MAX_OUTPUT_TOKENS = 4_000;
+
+/** Every attempt shares one deadline, so a slow model cannot multiply the budget by retrying. */
+const attemptTimeout = (deadline: number): number => Math.max(1, Math.floor(deadline - performance.now()));
+
 /**
  * One chat completion carrying every rule in the group. Retried on a reply that
  * will not parse, because a model that answered in prose answered the wrong
- * question and the next sample is cheaper than a missed violation.
+ * question and the next sample is cheaper than a missed violation. The retries
+ * share the caller's budget: a check that is already late is reported late, not
+ * given a second and third full timeout.
  */
 export const evaluateWithOpenRouter = async (options: {
   apiKey: string;
@@ -225,10 +233,14 @@ export const evaluateWithOpenRouter = async (options: {
   const { apiKey, baseURL, modelId, state, questions, timeoutMs } = options;
   const url = `${baseURL}${OPENROUTER_CHAT_PATH}`;
   const prompt = buildPrompt(state, questions);
+  const deadline = performance.now() + timeoutMs;
   let lastError: string = "no attempt was made";
 
   for (let attempt = 1; attempt <= OPENROUTER_REPLY_ATTEMPTS; attempt += 1) {
-    if (attempt > 1) await sleep(150 * (attempt - 1));
+    if (attempt > 1) {
+      if (performance.now() >= deadline) break;
+      await sleep(150 * (attempt - 1));
+    }
     let response: Response;
     try {
       response = await fetch(url, {
@@ -245,15 +257,24 @@ export const evaluateWithOpenRouter = async (options: {
           ],
           response_format: { type: "json_object" },
           temperature: 0,
-          max_tokens: 2000,
+          max_tokens: MAX_OUTPUT_TOKENS,
         }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(attemptTimeout(deadline)),
       });
     } catch (error) {
-      lastError =
-        error instanceof Error && error.name === "TimeoutError"
-          ? "the model did not answer within the time allowed"
-          : `the request failed: ${error instanceof Error ? error.message : String(error)}`;
+      // A timeout is not a wrong answer, so it is not worth another sample:
+      // the same prompt would take the same time again. Report it as it is.
+      const aborted =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      if (aborted) {
+        throw new AbideError(
+          "CHECK_TIMEOUT",
+          `the model did not answer within ${timeoutMs}ms, so this change was not judged`,
+          { cause: error },
+        );
+      }
+      lastError = `the request failed: ${error instanceof Error ? error.message : String(error)}`;
       continue;
     }
 
@@ -270,13 +291,15 @@ export const evaluateWithOpenRouter = async (options: {
     }
 
     const body = await response.json().catch(() => undefined);
-    const content: unknown =
+    const choice =
       typeof body === "object" && body !== null
-        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ((body as any)?.choices?.[0]?.message?.content as unknown)
+        ? (body as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]
         : undefined;
+    const content = choice?.message?.content;
+    // A 200 carrying no choices at all is the upstream losing the reply, not an
+    // answer of "no": it is worth the same retry as a reply that will not parse.
     if (typeof content !== "string" || content.trim() === "") {
-      lastError = "the model returned no text";
+      lastError = "the model returned an empty reply";
       continue;
     }
 

@@ -2,6 +2,7 @@ import { RetryError, type Experimental_EvaluationQuestion } from "ai";
 import {
   AbideError,
   assertNever,
+  isAbideError,
   type Question,
   type Rule,
   type Thresholds,
@@ -220,6 +221,9 @@ export const checkWithModel = async (
       inputTokens = result.inputTokens;
       outputTokens = result.outputTokens;
     } catch (error) {
+      // evaluateWithOpenRouter already answers in AbideError codes, and
+      // describeGatewayFailure would rewrite CHECK_TIMEOUT as CHECK_FAILED.
+      if (isAbideError(error)) throw error;
       throw describeGatewayFailure(error);
     }
   } else {
