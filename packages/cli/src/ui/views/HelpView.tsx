@@ -3,10 +3,7 @@ import { Header } from "../components/Header.js";
 import { palette } from "../theme.js";
 
 const COMMANDS: [string, string][] = [
-  [
-    "login [typesafe|gateway|openrouter] [user|project]",
-    "store a key owner-only, for you or for this repo",
-  ],
+  ["login [provider] [place]", "store a key owner-only, for you or for this repo"],
   ["init [agent] [--project]", "hook into claude, codex, opencode, or every one found here"],
   ["compile", "compile the rubric now, in a headless Claude Code turn"],
   ["tune [--global]", "rewrite rules that never fire, with their statistics attached"],
