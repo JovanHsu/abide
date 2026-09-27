@@ -209,8 +209,15 @@ const normalizeAll = (
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A reasoning model spends output tokens thinking before it writes. The JSON needs room on top of that. */
-const MAX_OUTPUT_TOKENS = 4_000;
+/**
+ * A reasoning model spends output tokens thinking before it writes, and the
+ * thinking is not bounded by the size of the answer. Measured against
+ * deepseek-v4.1-flash, one 13-rule check reasoned for 3k-6k tokens across
+ * identical calls: 2000 came back truncated with no answer at all, 4000 answered
+ * with nothing to spare. The rest is what stops a longer think from silently
+ * costing the whole check.
+ */
+const MAX_OUTPUT_TOKENS = 16_000;
 
 /** Every attempt shares one deadline, so a slow model cannot multiply the budget by retrying. */
 const attemptTimeout = (deadline: number): number => Math.max(1, Math.floor(deadline - performance.now()));
@@ -290,15 +297,52 @@ export const evaluateWithOpenRouter = async (options: {
       );
     }
 
-    const body = await response.json().catch(() => undefined);
+    // Headers arriving is not the answer arriving. A reasoning model streams a
+    // long think first, so the deadline can fire while the body is still being
+    // read, and the abort lands here rather than at the fetch above. Letting
+    // that become `undefined` reported it as an empty reply, which is a
+    // different fault with a different fix.
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      const aborted =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      if (aborted) {
+        throw new AbideError(
+          "CHECK_TIMEOUT",
+          `the model did not answer within ${timeoutMs}ms, so this change was not judged`,
+          { cause: error },
+        );
+      }
+      body = undefined;
+    }
     const choice =
       typeof body === "object" && body !== null
-        ? (body as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]
+        ? (body as { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[] })
+            .choices?.[0]
         : undefined;
     const content = choice?.message?.content;
-    // A 200 carrying no choices at all is the upstream losing the reply, not an
-    // answer of "no": it is worth the same retry as a reply that will not parse.
+    // A 200 carrying no content has two causes, and they want opposite things.
+    // finish_reason "length" means the model spent the whole output budget
+    // reasoning and never reached the answer: the same prompt at the same size
+    // comes up short again, so only a retry with more room can help, and once
+    // the room is there it is worth saying so rather than reporting an empty
+    // reply. Anything else is upstream losing the reply, which is worth the
+    // ordinary retry.
     if (typeof content !== "string" || content.trim() === "") {
+      const truncated = choice?.finish_reason === "length";
+      if (truncated && attempt < OPENROUTER_REPLY_ATTEMPTS) {
+        lastError = `the model used all ${MAX_OUTPUT_TOKENS} output tokens reasoning and returned no answer`;
+        continue;
+      }
+      if (truncated) {
+        throw new AbideError(
+          "CHECK_FAILED",
+          `the model used all ${MAX_OUTPUT_TOKENS} output tokens reasoning and never wrote an answer, so this change was not judged`,
+        );
+      }
       lastError = "the model returned an empty reply";
       continue;
     }
