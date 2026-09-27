@@ -16,7 +16,6 @@ import {
   OPENROUTER_DEFAULT_BASE_URL,
   OPENROUTER_DECISIONS_PATH,
   OPENROUTER_DECISIONS_URL,
-  OPENROUTER_USD_PER_INPUT_TOKEN,
   TYPESAFE_MODEL_ID,
 } from "./constants.js";
 import { credentials, NO_KEY_HINT, type Credentials } from "./credentials.js";
@@ -255,11 +254,9 @@ export const checkWithModel = async (
   const usage: Usage = {
     inputTokens,
     outputTokens,
-    costUsd:
-      inputTokens === undefined
-        ? undefined
-        : inputTokens *
-          (creds.kind === "openrouter" ? OPENROUTER_USD_PER_INPUT_TOKEN : JEV_USD_PER_INPUT_TOKEN),
+    // Both OpenRouter and TypeSafe serve the same Jev at the same list price,
+    // so the credential kind does not change what a token costs.
+    costUsd: inputTokens === undefined ? undefined : inputTokens * JEV_USD_PER_INPUT_TOKEN,
   };
   return { verdicts, usage, latencyMs };
 };

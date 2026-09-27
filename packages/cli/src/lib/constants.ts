@@ -25,10 +25,6 @@ export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DECISIONS_PATH = `${OPENROUTER_DEFAULT_BASE_URL}/systemone`;
 export const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 export const OPENROUTER_DEFAULT_MODEL_ID = "typesafe/jev-1.13";
-/** A reply that will not parse is a wrong answer; the next sample is cheaper than a miss. */
-export const OPENROUTER_REPLY_ATTEMPTS = 3;
-/** OpenRouter bills input and output; list price is per model, so cost is left to the service. */
-export const OPENROUTER_USD_PER_INPUT_TOKEN = 0;
 
 /** List price observed 2026-09-17: $0.042 per million input tokens, output free. */
 export const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
