@@ -8,16 +8,23 @@ export const GATEWAY_KEY_ENV = "AI_GATEWAY_API_KEY";
 export const TYPESAFE_BASE_URL_ENV = "TYPESAFE_AI_BASE_URL";
 
 /**
- * OpenRouter is not a TypeSafe endpoint. It has no /systemone and no calibrated
- * probabilities, so a reply is prose coerced back into the answer shape. The
- * model is a general one, which means the band thresholds mean what that model
- * means by a number, not what Jev would have meant.
+ * OpenRouter serves Jev too, so the questions stay typed and the probabilities
+ * stay calibrated — it is the same model answering, reached through a different
+ * door. Only the URL differs, and the SDK's fetch is rewritten to carry it.
  */
 export const OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY";
 export const OPENROUTER_MODEL_ENV = "OPENROUTER_MODEL";
 export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
-export const OPENROUTER_CHAT_PATH = "/chat/completions";
-export const OPENROUTER_DEFAULT_MODEL_ID = "deepseek/deepseek-v4.1-flash";
+/**
+ * Jev is a decision model, so OpenRouter serves it on a decisions endpoint
+ * rather than chat completions: posting it to /chat/completions is refused with
+ * "is a decisions model and cannot be used with the chat/completions endpoint".
+ * The body is the same typed question set /systemone takes, which is why the
+ * SDK can be pointed here by rewriting only the URL.
+ */
+export const OPENROUTER_DECISIONS_PATH = `${OPENROUTER_DEFAULT_BASE_URL}/systemone`;
+export const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+export const OPENROUTER_DEFAULT_MODEL_ID = "typesafe/jev-1.13";
 /** A reply that will not parse is a wrong answer; the next sample is cheaper than a miss. */
 export const OPENROUTER_REPLY_ATTEMPTS = 3;
 /** OpenRouter bills input and output; list price is per model, so cost is left to the service. */
@@ -42,12 +49,13 @@ export const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
  */
 export const EDIT_CHECK_TIMEOUT_MS = 16_000;
 /**
- * A turn carries every file the agent touched, so it gets the longer budget —
- * but Stop spends up to STOP_GIT_TIMEOUT_MS and STOP_FALLBACK_DIFF_TIMEOUT_MS
- * before the check runs, and the hook gives itself 28s. What is left over is
- * 14s, and this must fit inside that or the hook exits with no verdict.
+ * A turn carries every file the agent touched, so its one call is far heavier
+ * than an edit's: the same 26 rules that answered in 8.7s on a single hunk took
+ * 21s and 33s on a turn-sized diff. Stop also spends up to STOP_GIT_TIMEOUT_MS
+ * (8s) and STOP_FALLBACK_DIFF_TIMEOUT_MS (6s) before the check, and gives
+ * itself 70s, so this is what is left with room for the tail.
  */
-export const TURN_CHECK_TIMEOUT_MS = 13_000;
+export const TURN_CHECK_TIMEOUT_MS = 48_000;
 export const STDIN_TIMEOUT_MS = 2_000;
 
 /** Largest diff sent as state. Beyond this the diff is cut and marked. */

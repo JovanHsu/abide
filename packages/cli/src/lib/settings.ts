@@ -22,6 +22,15 @@ export type HookEvent = "SessionStart" | "UserPromptSubmit" | "PostToolUse" | "S
 
 export type HookSpec = { event: HookEvent; matcher?: string; command: string; timeout: number };
 
+/**
+ * How long the host waits before it kills a hook. Each one has to clear the
+ * budget the hook gives itself, which in turn clears the model's.
+ *
+ * PostToolUse and Stop are sized for a model that reasons before it answers.
+ * A group of 26 rules took 2.7s to 33s across identical calls, so a budget that
+ * fits the median kills the tail, and a killed hook reports nothing at all —
+ * worse than a slow one, which at least says the change went unjudged.
+ */
 export const hookSpecs = (hookScript: string): HookSpec[] => {
   const cmd = (name: string): string => `node "${hookScript}" ${name}`;
   return [
@@ -31,9 +40,9 @@ export const hookSpecs = (hookScript: string): HookSpec[] => {
       event: "PostToolUse",
       matcher: "Edit|Write|MultiEdit|apply_patch",
       command: cmd("post-tool-use"),
-      timeout: 20,
+      timeout: 30,
     },
-    { event: "Stop", command: cmd("stop"), timeout: 30 },
+    { event: "Stop", command: cmd("stop"), timeout: 75 },
   ];
 };
 

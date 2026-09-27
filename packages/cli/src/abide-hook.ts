@@ -13,10 +13,10 @@ switch (name) {
     await runHook("turn-start", handleTurnStart, 8_000);
     break;
   case "post-tool-use":
-    await runHook("post-tool-use", handlePostToolUse, 18_000);
+    await runHook("post-tool-use", handlePostToolUse, 26_000);
     break;
   case "stop":
-    await runHook("stop", handleStop, 28_000);
+    await runHook("stop", handleStop, 70_000);
     break;
   default:
     process.exit(0);

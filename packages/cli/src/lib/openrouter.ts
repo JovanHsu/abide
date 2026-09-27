@@ -6,7 +6,6 @@
 
 import { AbideError, type Question } from "@coldtea/abide-schema";
 import {
-  OPENROUTER_CHAT_PATH,
   OPENROUTER_DEFAULT_BASE_URL,
   OPENROUTER_MODEL_ENV,
   OPENROUTER_REPLY_ATTEMPTS,
@@ -238,7 +237,8 @@ export const evaluateWithOpenRouter = async (options: {
   timeoutMs: number;
 }): Promise<OpenRouterResult> => {
   const { apiKey, baseURL, modelId, state, questions, timeoutMs } = options;
-  const url = `${baseURL}${OPENROUTER_CHAT_PATH}`;
+  // Jev is served on OpenRouter's decisions endpoint, not chat completions.
+  const url = "https://openrouter.ai/api/alpha/decisions";
   const prompt = buildPrompt(state, questions);
   const deadline = performance.now() + timeoutMs;
   let lastError: string = "no attempt was made";

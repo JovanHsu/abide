@@ -2,7 +2,6 @@ import { RetryError, type Experimental_EvaluationQuestion } from "ai";
 import {
   AbideError,
   assertNever,
-  isAbideError,
   type Question,
   type Rule,
   type Thresholds,
@@ -15,11 +14,12 @@ import {
   GATEWAY_MODEL_ID,
   JEV_USD_PER_INPUT_TOKEN,
   OPENROUTER_DEFAULT_BASE_URL,
+  OPENROUTER_DECISIONS_PATH,
+  OPENROUTER_DECISIONS_URL,
   OPENROUTER_USD_PER_INPUT_TOKEN,
   TYPESAFE_MODEL_ID,
 } from "./constants.js";
 import { credentials, NO_KEY_HINT, type Credentials } from "./credentials.js";
-import { evaluateWithOpenRouter } from "./openrouter.js";
 
 export type ModelRule = Rule & { check: { type: "model" } };
 
@@ -157,11 +157,9 @@ export const describeGatewayFailure = (error: unknown): AbideError => {
  * Zero data retention is a gateway routing option. TypeSafe's API takes no
  * such flag, so sending it there would only look like a request that was made.
  *
- * OpenRouter never reaches here: it has no evaluation model to build, and
- * checkWithModel answers it through evaluateWithOpenRouter instead.
  */
 export const evaluationTarget = async (
-  creds: Exclude<Credentials, { kind: "none" | "openrouter" }>,
+  creds: Exclude<Credentials, { kind: "none" }>,
 ): Promise<
   Pick<Parameters<typeof import("ai").experimental_evaluate>[0], "model" | "providerOptions">
 > => {
@@ -174,6 +172,24 @@ export const evaluationTarget = async (
           : { apiKey: creds.key, baseURL: creds.baseURL },
       );
       return { model: provider.evaluationModel(TYPESAFE_MODEL_ID) };
+    }
+    case "openrouter": {
+      // OpenRouter serves Jev on its own decisions endpoint rather than
+      // /systemone, and nothing about the SDK is Jev-specific: it posts a typed
+      // question set and reads typed answers back. So the SDK is used as it is
+      // and only the URL is rewritten, which keeps the boolean-to-noul encoding,
+      // the calibrated-probability parsing and the usage accounting on the same
+      // path the direct TypeSafe call takes.
+      const { createTypeSafeAi } = await import("@ai-sdk/typesafe-ai");
+      const provider = createTypeSafeAi({
+        apiKey: creds.key,
+        baseURL: OPENROUTER_DEFAULT_BASE_URL,
+        fetch: async (input, init) => {
+          const url = String(input).replace(OPENROUTER_DECISIONS_PATH, OPENROUTER_DECISIONS_URL);
+          return fetch(url, init);
+        },
+      });
+      return { model: provider.evaluationModel(creds.model) };
     }
     case "gateway":
       process.env[GATEWAY_KEY_ENV] = creds.key;
@@ -200,52 +216,27 @@ export const checkWithModel = async (
   for (const rule of rules) questions[rule.id] = toSdkQuestion(rule.check.question);
 
   const started = performance.now();
-  // OpenRouter has no /systemone and no typed questions, so it is answered by a
-  // chat completion and coerced back. Everything after this point is shared.
-  let answers: Record<string, unknown>;
-  let inputTokens: number | undefined;
-  let outputTokens: number | undefined;
-  if (creds.kind === "openrouter") {
-    const questionText: Record<string, Question> = {};
-    for (const rule of rules) questionText[rule.id] = rule.check.question;
-    try {
-      const result = await evaluateWithOpenRouter({
-        apiKey: creds.key,
-        baseURL: OPENROUTER_DEFAULT_BASE_URL,
-        modelId: creds.model,
-        state,
-        questions: questionText,
-        timeoutMs,
-      });
-      answers = result.answers;
-      inputTokens = result.inputTokens;
-      outputTokens = result.outputTokens;
-    } catch (error) {
-      // evaluateWithOpenRouter already answers in AbideError codes, and
-      // describeGatewayFailure would rewrite CHECK_TIMEOUT as CHECK_FAILED.
-      if (isAbideError(error)) throw error;
-      throw describeGatewayFailure(error);
-    }
-  } else {
-    const { experimental_evaluate: evaluate } = await import("ai");
-    const { model, providerOptions } = await evaluationTarget(creds);
-    let result: Awaited<ReturnType<typeof evaluate>>;
-    try {
-      result = await evaluate({
-        model,
-        state,
-        questions,
-        maxRetries: retries,
-        abortSignal: AbortSignal.timeout(timeoutMs),
-        ...(providerOptions === undefined ? {} : { providerOptions }),
-      });
-    } catch (error) {
-      throw describeGatewayFailure(error);
-    }
-    answers = result.answers;
-    inputTokens = result.usage.inputTokens;
-    outputTokens = result.usage.outputTokens;
+  // Every kind is answered by the SDK: a typed question set goes out and typed
+  // answers come back. OpenRouter differs only in the URL, which evaluationTarget
+  // rewrites, so nothing downstream branches on the credential kind.
+  const { experimental_evaluate: evaluate } = await import("ai");
+  const { model, providerOptions } = await evaluationTarget(creds);
+  let result: Awaited<ReturnType<typeof evaluate>>;
+  try {
+    result = await evaluate({
+      model,
+      state,
+      questions,
+      maxRetries: retries,
+      abortSignal: AbortSignal.timeout(timeoutMs),
+      ...(providerOptions === undefined ? {} : { providerOptions }),
+    });
+  } catch (error) {
+    throw describeGatewayFailure(error);
   }
+  const answers = result.answers;
+  const inputTokens = result.usage.inputTokens;
+  const outputTokens = result.usage.outputTokens;
   const latencyMs = Math.round(performance.now() - started);
 
   const verdicts: Verdict[] = [];
