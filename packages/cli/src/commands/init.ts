@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { AbideError, HOSTS, type Host } from "@coldtea/abide-schema";
-import { resolveCredentials } from "../lib/credentials.js";
+import { AbideError, assertNever, HOSTS, type Host } from "@coldtea/abide-schema";
+import { resolveCredentials, type Credentials } from "../lib/credentials.js";
 import { detectHosts, hostLabel, installHost, parseHost, type Installed } from "../lib/hosts.js";
 import { hookScriptPath } from "../lib/packageRoot.js";
 import { abideDir, findRepoRoot, rubricPath } from "../lib/paths.js";
@@ -12,6 +12,24 @@ import { discoverGlobalSources, discoverProjectSources } from "../lib/sources.js
 import type { Step } from "../ui/components/Checklist.js";
 import { showStatic } from "../ui/render.js";
 import { InitView } from "../ui/views/InitView.js";
+
+/**
+ * Which service the key belongs to. A closed set, so it switches exhaustively:
+ * the two-branch version this replaced silently called an OpenRouter key a
+ * gateway key, and the only symptom was a sentence claiming the wrong service.
+ */
+const credentialLabel = (creds: Exclude<Credentials, { kind: "none" }>): string => {
+  switch (creds.kind) {
+    case "typesafe":
+      return "TypeSafe";
+    case "gateway":
+      return "Vercel AI Gateway";
+    case "openrouter":
+      return "OpenRouter";
+    default:
+      return assertNever(creds);
+  }
+};
 
 const selfTest = (script: string, root: string): boolean => {
   const payload = JSON.stringify({
@@ -66,7 +84,7 @@ export const runInit = async (argv: string[]): Promise<number> => {
   const steps: Step[] = [
     {
       ok: true,
-      text: `${creds.kind === "typesafe" ? "TypeSafe" : "Vercel AI Gateway"} key found in ${creds.from}`,
+      text: `${credentialLabel(creds)} key found in ${creds.from}`,
     },
     {
       ok: true,
