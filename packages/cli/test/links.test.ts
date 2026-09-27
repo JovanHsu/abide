@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { followLinks, resolveLinkTarget } from "../src/lib/links.js";
+import { homeDir } from "../src/lib/paths.js";
 import { discoverProjectSources } from "../src/lib/sources.js";
 
 const repo = (files: Record<string, string>): string => {
@@ -42,6 +43,28 @@ describe("resolveLinkTarget", () => {
 
   it("refuses a link that leaves the repository", () => {
     expect(resolveLinkTarget(root, from, "../../outside.md")).toBeUndefined();
+  });
+
+  it("strips the @ of an import so it does not resolve inside the file's own directory", () => {
+    const host = "/home/u/.claude/CLAUDE.md";
+    // Both spellings mean home, and neither may land under .claude/ next to the
+    // importing file, which is where the unstripped "@" sent it.
+    expect(resolveLinkTarget("/home/u", host, "@~/.claude/rules/ecosystem.md")).toBe(
+      path.join(homeDir(), ".claude", "rules", "ecosystem.md"),
+    );
+    expect(resolveLinkTarget("/home/u", host, "~/.claude/rules/ecosystem.md")).toBe(
+      path.join(homeDir(), ".claude", "rules", "ecosystem.md"),
+    );
+    expect(resolveLinkTarget("/home/u", host, "@~/.claude/rules/ecosystem.md")).not.toContain(
+      "@~",
+    );
+  });
+
+  it("refuses ~user rather than joining it onto this home", () => {
+    expect(resolveLinkTarget("/home/u", "/home/u/.claude/CLAUDE.md", "~root/secret.md")).toBeUndefined();
+    expect(
+      resolveLinkTarget("/home/u", "/home/u/.claude/CLAUDE.md", "@~root/secret.md"),
+    ).toBeUndefined();
   });
 });
 
@@ -104,6 +127,28 @@ describe("followLinks", () => {
       "docs/AGENTS.md": "no links",
     });
     expect(followLinks(root, [path.join(root, "AGENTS.md")])).toHaveLength(1);
+  });
+
+  it("recognises a backtick-wrapped @import as an import, not as prose about one", () => {
+    // A fixture cannot express this: a `~` target resolves against the real
+    // home, not the fixture root, so the host file has to be the real one.
+    const host = path.join(homeDir(), ".claude", "CLAUDE.md");
+    if (!existsSync(host)) return;
+    const found = followLinks(homeDir(), [host]).map((f) => path.basename(f.absolute));
+    // Only imports whose target exists come back, so assert on the ones that do.
+    for (const name of ["ecosystem.md", "long-running-tasks.md"]) {
+      if (existsSync(path.join(homeDir(), ".claude", "rules", name))) {
+        expect(found).toContain(name);
+      }
+    }
+    expect(found.length).toBeGreaterThan(0);
+  });
+
+  it("does not mistake an email address or a decorator for an import", () => {
+    const root = repo({
+      "AGENTS.md": "write to a@b.com, never `@Component(x.md)`\n",
+    });
+    expect(followLinks(root, [path.join(root, "AGENTS.md")])).toEqual([]);
   });
 });
 

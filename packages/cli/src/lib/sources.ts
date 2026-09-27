@@ -18,7 +18,21 @@ export type SourceCandidate = {
 
 const ROOT_NAMES = ["AGENTS.md", "CLAUDE.md", ".cursorrules"];
 const NESTED_NAMES = ["AGENTS.md", "CLAUDE.md"];
-const GLOBAL_NAMES = ["~/.claude/CLAUDE.md", "~/.codex/AGENTS.md", "~/.config/opencode/AGENTS.md"];
+/**
+ * Files every repo on this machine is governed by. The first three are the
+ * host's own instruction file; the last is the rule library a global CLAUDE.md
+ * keeps beside itself, which `@~/.claude/rules/x.md` imports one at a time.
+ * Rules under it are read by directory rather than only through those imports,
+ * so a rule file that nothing imports yet is still compiled.
+ */
+const GLOBAL_NAMES = [
+  "~/.claude/CLAUDE.md",
+  "~/.codex/AGENTS.md",
+  "~/.config/opencode/AGENTS.md",
+];
+
+/** Directories under home whose documents are rules for every repo. */
+const GLOBAL_DIRS = ["~/.claude/rules"];
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -144,13 +158,85 @@ const scopeForPath = (
   return toSourcePath(root, absolute);
 };
 
-export const discoverGlobalSources = (): SourceCandidate[] =>
-  GLOBAL_NAMES.flatMap((p) => {
+export const discoverGlobalSources = (): SourceCandidate[] => {
+  const named = GLOBAL_NAMES.flatMap((p) => {
     const absolute = path.join(homeDir(), p.slice(2));
     return existsSync(absolute)
       ? [{ path: p, absolute, scope: "**/*", required: true, origin: "global" as const }]
       : [];
   });
+  const imported = discoverGlobalImports(named);
+  return [...named, ...imported, ...discoverGlobalDirs()];
+};
+
+/**
+ * What a global instruction file imports with `@~/.claude/rules/x.md`. Followed
+ * because the alternative is a rule the person believes is loaded and is not,
+ * and the rule library is read by directory as well, so this only catches the
+ * files a directory sweep would miss: ones outside GLOBAL_DIRS.
+ */
+const discoverGlobalImports = (seeds: readonly SourceCandidate[]): SourceCandidate[] => {
+  if (seeds.length === 0) return [];
+  const known = new Set(seeds.map((s) => path.resolve(s.absolute)));
+  const out: SourceCandidate[] = [];
+  for (const linked of followLinks(homeDir(), seeds.map((s) => s.absolute))) {
+    const resolved = path.resolve(linked.absolute);
+    if (known.has(resolved)) continue;
+    known.add(resolved);
+    out.push({
+      path: toSourcePath(homeDir(), linked.absolute),
+      absolute: linked.absolute,
+      scope: "**/*",
+      required: false,
+      origin: "global",
+    });
+  }
+  return out;
+};
+
+/** Every document under a global rules directory, deepest last so the order is stable. */
+const discoverGlobalDirs = (): SourceCandidate[] => {
+  const out: SourceCandidate[] = [];
+  const seen = new Set<string>();
+  for (const dir of GLOBAL_DIRS) {
+    const absolute = path.join(homeDir(), dir.slice(2));
+    const files: string[] = [];
+    collectDocuments(absolute, 0, files);
+    files.sort();
+    for (const file of files) {
+      const resolved = path.resolve(file);
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      out.push({
+        path: toSourcePath(homeDir(), file),
+        absolute: file,
+        // A global rule binds everywhere, as the global instruction files do.
+        scope: "**/*",
+        required: false,
+        origin: "global",
+      });
+    }
+  }
+  return out;
+};
+
+const collectDocuments = (dir: string, depth: number, out: string[]): void => {
+  if (depth > MAX_DEPTH) return;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      collectDocuments(path.join(dir, entry.name), depth + 1, out);
+      continue;
+    }
+    if (entry.isFile() && /\.(?:md|markdown|mdx)$/i.test(entry.name)) out.push(path.join(dir, entry.name));
+  }
+};
 
 export const hashFile = (absolute: string): string | undefined => {
   const bytes = readRegularFile(absolute);
